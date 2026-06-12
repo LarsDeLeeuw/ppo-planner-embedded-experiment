@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>tb3_bringup</name>
+  <version>1.0.0</version>
+  <description>Combined launch file for all TurtleBot3 research nodes</description>
+  <maintainer email="deleeuwlars@icloud.com">LarsDeLeeuw</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>tb3_nav</exec_depend>
+  <exec_depend>ros2_bridge</exec_depend>
+  <exec_depend>ppo_planner</exec_depend>
+  <exec_depend>astar_planner</exec_depend>
+  <exec_depend>tb3_power_sensor</exec_depend>
+  <exec_depend>tb3_diagnostics</exec_depend>
+  <exec_depend>tb3_rapl_sampler</exec_depend>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

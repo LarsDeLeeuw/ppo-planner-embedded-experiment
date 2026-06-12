@@ -1,0 +1,69 @@
+# =============================================================================
+# experiment.yaml — per-experiment overrides for tb3_bringup
+#
+# Values here override the per-package default_params.yaml files, which are
+# loaded first. Only list keys you actually want to change — anything omitted
+# falls back to the package default.
+#
+# The authoritative defaults live in each package's config/default_params.yaml:
+#   - src/tb3_nav/config/default_params.yaml
+#   - src/ppo_planner/config/default_params.yaml
+#   - src/astar_planner/config/default_params.yaml
+#   - src/ros2_bridge/config/default_params.yaml
+#
+# Override hierarchy (later wins):
+#   package default_params.yaml  →  this file  →  --ros-args -p name:=value
+#
+# See src/tb3_bringup/README.md for the full list of parameters per node.
+#
+# Style: a node section must have at least one parameter under ros__parameters.
+# If you want zero overrides for a node, leave its whole block commented out
+# (ROS2's YAML parser rejects empty ros__parameters blocks). The commented
+# templates below ship with realistic example values; uncomment to activate.
+# =============================================================================
+
+grid_nav_node:
+  ros__parameters:
+    cell_size: 0.13
+    max_move_distance: 0.5
+    # max_linear_speed: 0.10
+    # initial_heading: 1.5708  # pi/2 — robot facing +Y at startup
+
+    # Per-surface drive calibration. Run `ros2 run tb3_nav calibrate` on the
+    # surface in use, then paste its suggested values here. 1.0 = no
+    # correction. <1.0 = robot under-moves (carpet slip). See
+    # context/calibration_procedure.md for the full procedure.
+    linear_calibration: 0.9283
+    # angular_calibration: 1.0  # only used when use_imu_heading: false
+
+ppo_planner_node:
+  ros__parameters:
+    grid_size_x: 15
+    grid_size_y: 15
+    # Stochastic sampling is the default (deterministic: false) — it is how PPO
+    # was trained and what it needs to navigate. `seed` makes a run reproducible
+    # (>= 0); set it per trial if you want distinct-but-reproducible rollouts.
+    seed: 5
+#     deterministic: true        # argmax instead of sampling (greedy; tends to get stuck)
+
+# astar_planner_node:
+#   ros__parameters:
+#     energy_weight: 2.0
+#     max_expansions: 10000
+
+# astar_shortest_node:
+#   ros__parameters:
+#     max_expansions: 10000
+
+bridge_node:
+  ros__parameters:
+    tcp_port: 9090
+    # NOTE: `predict_service` is no longer set here. It is driven automatically
+    # by the `planner` launch arg in src/tb3_bringup/launch/bringup.launch.py
+    # via the PLANNER_TO_PREDICT_SERVICE map. The launch file passes the
+    # resolved value as an inline parameter to bridge_node, which overrides
+    # any YAML value. To override on a one-off basis, pass
+    #   bridge_predict_service:=/my/service
+    # on the ros2 launch CLI instead of editing this file.
+    # predict_service: "/astar_planner_node/predict_action"      # when planner:=astar
+    # predict_service: "/astar_shortest_node/predict_action"     # when planner:=astar_shortest

@@ -1,0 +1,12 @@
+bridge_node:
+  ros__parameters:
+    # TCP server configuration
+    tcp_port: 9090                                         # Port the bridge listens on
+    poll_hz: 20.0                                          # How often to drain the TCP inbox (Hz)
+
+    # ROS2 interface names the bridge forwards to. Absolute names so they
+    # remain correct regardless of how the bridge node itself is namespaced.
+    pose_service: "/grid_nav_node/set_grid_pose"           # SetGridPose service (pose corrections in)
+    goal_action: "move_to_grid"                            # MoveToGrid action (nav goals)
+    grid_pose_topic: "/grid_nav_node/grid_pose"            # GridPose topic (self-estimate out)
+    predict_service: "/ppo_planner_node/predict_action"    # PredictAction service (PPO or A*)

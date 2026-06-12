@@ -1,0 +1,46 @@
+power_sensor_node:
+  ros__parameters:
+    i2c_bus: 1                 # /dev/i2c-1 on the Pi 4B
+    publish_rate_hz: 100.0
+    thermal_rate_hz: 1.0
+
+    # INA219 conversion mode. "8avg" integrates ~4.26 ms/channel as an
+    # anti-alias filter against the ~16 kHz OpenCR motor PWM. Single-shot
+    # 12-bit ("12bit") would alias it at 100 Hz. Lower-precision-but-filtered
+    # is the right trade for power integration.
+    adc_mode: "8avg"
+    pga: "8_320mv"             # ±320 mV shunt range = ±3.2 A at 0.1 Ω
+    bus_range_v: 32
+
+    sensor_ids: ["solar", "sbc", "opencr"]
+
+    # I2C addresses set via A0/A1 strap pins. Keep this mapping in lockstep
+    # with the physical wiring harness — swapping addresses silently swaps
+    # sign conventions across rails. Decimal values to avoid YAML hex
+    # parsing ambiguity:
+    #   0x41 = 65   (A0=VS+, A1=GND)
+    #   0x44 = 68   (A0=GND, A1=VS+)
+    #   0x45 = 69   (A0=VS+, A1=VS+)
+    #
+    # current_calibration: per-sensor gain factor measured by feeding a
+    # known reference current through each rail. Defined as
+    # (sensor_reading_mA / actual_mA) at the calibration point. The node
+    # divides raw current_ma and power_mw by this factor before publishing,
+    # and stamps the value into PowerSample.current_calibration for trace.
+    # Default 1.0 = no correction; values within a few percent of 1.0 are
+    # normal given the INA219's ±2% gain spec + shunt tolerance.
+    solar:
+      i2c_address: 69          # 0x45 — between solar panel and battery (bidirectional)
+      shunt_ohm: 0.1
+      max_current_a: 3.2
+      current_calibration: 1.007
+    sbc:
+      i2c_address: 68          # 0x44 — between battery and Pi 4B
+      shunt_ohm: 0.1
+      max_current_a: 3.2
+      current_calibration: 1.011
+    opencr:
+      i2c_address: 65          # 0x41 — between battery and OpenCR
+      shunt_ohm: 0.1
+      max_current_a: 3.2
+      current_calibration: 1.017

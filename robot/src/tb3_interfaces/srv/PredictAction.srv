@@ -1,0 +1,49 @@
+# Request a planner action (PPO or A*) for a given grid state.
+#
+# Coordinate convention: origin (0,0) = bottom-left, X = East, Y = North.
+# All positions are integer grid cell indices.
+#
+# GridMap layout (see GridMap.msg for the canonical statement):
+#   - First index ("row") indexes X (East-West axis).
+#   - Second index ("col") indexes Y (North-South axis).
+#   - Cell at (robot_x, robot_y) lives at data[robot_x * cols + robot_y].
+# Producers must build grids as grid[x][y], not grid[y][x] (image style),
+# or the planner reads a transposed world and the returned direction
+# appears rotated 90° when the caller composes next = current + direction.
+
+# Obstacle grid: 0.0 = free, 1.0 = occupied. Shape must match the node's grid_size.
+tb3_interfaces/GridMap obstacle_map
+
+# Energy grid: float values in [0.0, 1.0]. Same shape as obstacle_map.
+tb3_interfaces/GridMap energy_map
+
+# Robot's current grid cell (integer indices).
+int32 robot_x
+int32 robot_y
+
+# Goal grid cell (integer indices).
+int32 goal_x
+int32 goal_y
+
+# Per-call sequence number, forwarded by the bridge from the orchestrator's
+# outbound `predict`. The planner echoes it on PlannerMetrics.sequence so the
+# latency decomposition can join inference time to bridge/TCP timing.
+# Additive field: a request that leaves it 0 (e.g., an older client) still
+# works; analysis just can't sequence-join that call.
+uint32 sequence
+---
+# True if inference succeeded.
+bool success
+
+# Human-readable status or error description.
+string message
+
+# Discrete action from the planner (0..7). Only valid when success=true.
+# See tb3_planner_common.directions.DIRECTION for the action <-> (dx, dy) table.
+uint8 action
+
+# Direction vector corresponding to the action. Each component is -1, 0, or 1.
+# direction_x is the X (East-West) delta; direction_y is the Y (North-South) delta.
+# Caller composes: next_cell = (robot_x + direction_x, robot_y + direction_y).
+int8 direction_x
+int8 direction_y

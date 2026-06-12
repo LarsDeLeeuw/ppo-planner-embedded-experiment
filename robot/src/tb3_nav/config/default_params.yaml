@@ -1,0 +1,46 @@
+grid_nav_node:
+  ros__parameters:
+    # Grid geometry
+    cell_size: 0.33           # meters per grid cell
+    max_move_distance: 3.0    # meters -- safety limit, rejects goals beyond this
+
+    # Speed limits (TurtleBot3 Burger: max ~0.22 m/s linear, ~2.84 rad/s angular)
+    max_linear_speed: 0.15    # m/s -- conservative for accuracy
+    min_linear_speed: 0.05    # m/s -- below this motors stall
+    max_angular_speed: 0.8    # rad/s
+    min_angular_speed: 0.15   # rad/s
+
+    # Controller gains
+    kp_linear: 1.0            # P-gain for distance error -> linear speed
+    kp_angular: 2.0           # P-gain for heading error -> angular speed
+    kp_heading_correction: 0.2  # heading correction during straight driving
+
+    # Tolerances
+    heading_tolerance: 0.02   # rad (~1.1 deg) -- when rotation is "done"
+    distance_tolerance: 0.02  # meters (2 cm) -- when driving is "done"
+    settling_time: 0.3        # seconds -- pause between rotation and driving to dissipate angular momentum
+
+    # Surface calibration (tune per-floor; default 1.0 = no correction)
+    # linear_calibration  = actual_physical_distance / odom_reported_distance
+    # angular_calibration = actual_physical_rotation / odom_reported_rotation
+    # Values < 1.0 mean the robot under-moves (e.g. wheel slip on carpet);
+    # values > 1.0 mean it over-moves. The controller compensates by scaling
+    # the internal driving target accordingly. Procedure: drive a known
+    # distance/rotation, measure with a tape/protractor, set ratio = actual/commanded.
+    # angular_calibration is ignored when use_imu_heading is true (IMU is trusted).
+    linear_calibration: 1.0
+    angular_calibration: 1.0
+
+    # Timeout
+    move_timeout: 30.0        # seconds -- abort if a single move takes longer
+
+    # Control loop
+    control_rate: 20.0        # Hz
+
+    # Sensor configuration
+    use_imu_heading: true     # true = IMU for heading (recommended), false = odom fallback
+
+    # Initial pose (grid coordinates + heading at startup)
+    initial_grid_x: 0
+    initial_grid_y: 0
+    initial_heading: 0.0      # radians -- must match robot's physical heading at startup

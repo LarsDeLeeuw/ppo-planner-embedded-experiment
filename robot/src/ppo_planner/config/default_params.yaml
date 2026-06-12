@@ -1,0 +1,22 @@
+ppo_planner_node:
+  ros__parameters:
+    # Path to the ONNX-exported PPO policy (.onnx).
+    # If relative, resolved against the package's share/models/ directory.
+    model_path: "AIPPOm10EH_continued.onnx"
+
+    # Grid dimensions. Must match the maps sent in PredictAction requests.
+    grid_size_x: 10
+    grid_size_y: 10
+
+    # Number of robots the model was trained with (observation-space shape).
+    num_robots: 10
+
+    # Action selection. false => sample from the policy distribution
+    # (softmax(logits) in numpy); true => argmax. PPO was trained with
+    # stochastic sampling and navigates poorly under pure argmax (it walks into
+    # walls and oscillates near the goal), so stochastic is the default.
+    deterministic: false
+
+    # RNG seed for stochastic sampling. >= 0 => reproducible across launches;
+    # negative => fresh entropy each launch. Ignored when deterministic: true.
+    seed: 0

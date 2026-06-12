@@ -1,0 +1,8 @@
+# Correct the robot's internal position estimate.
+#
+# Called by external localization systems (e.g. overhead camera) to reset
+# the node's believed grid position and heading at any time.
+tb3_interfaces/GridPose pose
+---
+bool success
+string message

@@ -1,0 +1,19 @@
+# Single-trial plan for the first live shakedown.
+# Edit the map line below to match a scene you've actually saved
+# (tracker/scenes/<scene_name>.json) and a real goal cell on that map.
+#
+# Run with: python main.py --campaign orchestrator/one_trial_plan.yaml
+# DO NOT pass --auto-advance — you only have one trial and want to see it.
+
+schema_version: 1
+random_seed: 0
+runs_per_session: 1                # just one trial for this shakedown
+session_order: as_written
+
+cells:
+  - {mode: decentralized, planner: ppo}     # change planner if PPO isn't loaded
+
+maps:
+  # TODO before launching: replace scene_name + goal_cell to match a real
+  # saved scene with obstacles marked. Tracker frame: row 0 = top.
+  - {map_id: shakedown, scene_name: experiment1, goal_cell: [1, 0], start_cell: [8, 9]}

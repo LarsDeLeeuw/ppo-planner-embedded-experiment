@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# --- ROS2 / colcon ---
+build/
+install/
+log/
+
+# --- Node (legacy tooling, should not reappear) ---
+node_modules/
+
+# --- Raw experiment bags (offered as external download, not committed) ---
+# Figures, summaries, metadata and small artifacts ARE committed; the heavy
+# ROS bags are not. See experiments/README.md for the download link.
+*.mcap
+
+# --- Runtime / machine-local tracker artifacts ---
+local.yml
+captures/
+scenes/
+auto_logs/
+*.npz
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Claude Code harness ---
+.claude/
+
+# --- Local-only as-built notes (real hosts / IPs / credentials — NEVER publish) ---
+*.LOCAL.md

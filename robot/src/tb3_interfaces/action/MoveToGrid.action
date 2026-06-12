@@ -1,0 +1,22 @@
+# Navigate the robot to a target grid cell.
+#
+# The node computes the heading and distance from its current estimated
+# position to the target cell, then executes a rotate-then-drive maneuver.
+
+# --- Goal ---
+float64 target_x
+float64 target_y
+---
+# --- Result ---
+bool success
+string message
+tb3_interfaces/GridPose final_pose
+float64 total_distance_m
+float64 total_rotation_rad
+---
+# --- Feedback ---
+string phase                        # "rotating", "driving", "finalizing", "complete"
+tb3_interfaces/GridPose current_pose
+float64 distance_remaining_m
+float64 heading_error_rad
+float64 elapsed_time_s

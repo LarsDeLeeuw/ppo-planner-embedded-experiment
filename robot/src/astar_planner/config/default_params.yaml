@@ -1,0 +1,15 @@
+/**:
+  ros__parameters:
+    # Search variant. "energy" prefers high-energy cells; "shortest" minimises
+    # geometric path length with an admissible octile heuristic.
+    variant: "energy"
+
+    # Energy-harvest weight (alpha in the paper, Eq. 34). Larger values make the
+    # planner chase energy more aggressively. Keep in [0, 1] to preserve the
+    # admissible (1 - alpha)-scaled heuristic (Eq. 35). Only used when
+    # variant == "energy". Paper default: 0.5.
+    energy_weight: 0.5
+
+    # Safety cap on A* node expansions. 0 disables the cap; any positive value
+    # aborts the search (success=false, descriptive message) once exceeded.
+    max_expansions: 0

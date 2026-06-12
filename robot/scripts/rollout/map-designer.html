@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EH-aware Path Planning Map Designer</title>
+<style>
+  :root {
+    --grid-bg: #fafafa;
+    --grid-line: #333;
+    --obstacle: #d92626;
+    --start: #7cd92b;
+    --goal: #2941d9;
+    --path-step: #ff8c00;
+    --path-euc:  #0078d4;
+    --path-eh:   #1ea93f;
+    --light:     #ffd400;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f3f3f3;
+    color: #222;
+  }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  .layout { display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: start; }
+  .left-col { display: flex; flex-direction: column; gap: 12px; }
+  .grid-wrap { position: relative; background: var(--grid-bg); border: 1px solid var(--grid-line); }
+  .grid { display: grid; width: 100%; height: 100%; }
+  .cell {
+    position: relative;
+    border: 1px solid #c0c0c0;
+    user-select: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: rgba(0,0,0,0.35);
+    overflow: hidden;
+  }
+  .cell.obstacle { background: var(--obstacle); }
+  .cell.start    { background: var(--start); }
+  .cell.goal     { background: var(--goal); }
+  .cell .src-dot {
+    position: absolute;
+    width: 30%; height: 30%;
+    min-width: 6px; min-height: 6px;
+    max-width: 12px; max-height: 12px;
+    border-radius: 50%;
+    background: #f0a000;
+    border: 2px solid #663300;
+    pointer-events: none;
+  }
+  .cell .src-dot.invalid {
+    background: #ff4444;
+    border-color: #aa0000;
+    box-shadow: 0 0 0 2px rgba(255,0,0,0.4);
+  }
+  .cell .lbl { position: absolute; top: 1px; left: 2px; font-size: 9px; line-height: 1; pointer-events: none; }
+  svg.overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .toolbar button { padding: 6px 10px; border: 1px solid #888; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .toolbar button.active { background: #2941d9; color: white; border-color: #1c2da3; }
+  .toolbar select { padding: 6px 8px; font-size: 13px; border: 1px solid #888; border-radius: 4px; background: white; }
+  .stats { background: white; border: 1px solid #ccc; border-radius: 6px; padding: 12px 14px; font-size: 13px; min-width: 380px; }
+  .stats h2 { font-size: 14px; margin: 0 0 6px; }
+  .stats table { width: 100%; border-collapse: collapse; }
+  .stats th, .stats td { text-align: left; padding: 4px 6px; border-bottom: 1px solid #eee; font-size: 12px; }
+  .legend-swatch { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 4px; }
+  .controls { background: white; border: 1px solid #ccc; border-radius: 6px; padding: 10px 14px; font-size: 13px; }
+  .controls label { display: block; margin: 6px 0 2px; font-size: 12px; }
+  .controls input[type=range] { width: 100%; }
+  .controls .row { display: flex; gap: 12px; align-items: center; }
+  .controls .row > * { flex: 1; }
+  .small { font-size: 11px; color: #666; }
+  .path-toggles label { display: inline-block; margin-right: 8px; font-size: 12px; }
+  .preset-btns { display: flex; flex-wrap: wrap; gap: 4px; }
+  .preset-btns button { font-size: 11px; padding: 4px 8px; cursor: pointer; }
+  .preset-btns button.featured { background: #fff8dc; border: 1px solid #d4a017; font-weight: 600; }
+  textarea { width: 100%; height: 80px; font-family: monospace; font-size: 11px; }
+  details { margin-top: 6px; }
+  summary { cursor: pointer; font-size: 12px; }
+  .map-info { background: #f0f7ff; border: 1px solid #b0d0f0; border-radius: 4px; padding: 8px 10px; font-size: 12px; line-height: 1.4; }
+  .warn { padding:6px; background:#ffe8e8; border-left:3px solid #d92626; margin-bottom:6px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<h1>EH-aware Path Planning Map Designer</h1>
+<div class="small" style="margin-bottom:12px;">
+  Click cells with the active tool. Three optimal paths recompute live:
+  <span style="color:var(--path-step)">step-count</span>,
+  <span style="color:var(--path-euc)">Euclidean</span>,
+  <span style="color:var(--path-eh)">EH-aware</span>.
+  Top-left is (0,0). 8-direction moves; diagonals cost &radic;2 physically.
+  Physical lamp constraint: max 3 lights, each on grid edge or adjacent to an obstacle.
+</div>
+
+<div class="layout">
+  <div class="left-col">
+    <div class="toolbar" id="toolbar">
+      <span class="small">Grid:</span>
+      <select id="gridSize">
+        <option value="10">10 &times; 10</option>
+        <option value="15">15 &times; 15</option>
+        <option value="20">20 &times; 20</option>
+      </select>
+      <span class="small" style="margin-left:8px;">Tool:</span>
+      <button data-tool="obstacle" class="active">Obstacle</button>
+      <button data-tool="erase">Erase</button>
+      <button data-tool="start">Start</button>
+      <button data-tool="goal">Goal</button>
+      <button data-tool="light">Light source</button>
+      <button data-tool="removeLight">Remove light</button>
+    </div>
+
+    <div class="grid-wrap" id="gridWrap">
+      <div class="grid" id="grid"></div>
+      <svg class="overlay" id="overlay" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="controls">
+      <div class="row">
+        <div>
+          <label>EH weight &alpha; (cost = step &minus; &alpha;&middot;EH): <span id="alphaVal">0.50</span></label>
+          <input type="range" id="alpha" min="0" max="1" step="0.05" value="0.5">
+        </div>
+        <div>
+          <label>Light source &sigma; (cells): <span id="sigmaVal">1.5</span></label>
+          <input type="range" id="sigma" min="0.5" max="4" step="0.1" value="1.5">
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px;">
+        <label style="margin:0;"><input type="checkbox" id="cornerSqueeze" checked> Forbid diagonal moves through 2 obstacle corners (realistic for TurtleBot)</label>
+      </div>
+      <div class="path-toggles" style="margin-top:8px;">
+        <label><input type="checkbox" id="showStep" checked> <span style="color:var(--path-step)">&mdash;</span> Step-count optimal</label>
+        <label><input type="checkbox" id="showEuc" checked> <span style="color:var(--path-euc)">&mdash;</span> Euclidean optimal</label>
+        <label><input type="checkbox" id="showEh" checked> <span style="color:var(--path-eh)">&mdash;</span> EH-aware optimal</label>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div style="margin-bottom:6px; font-size:12px; font-weight:600;">Maze maps (verified, satisfy 3-light constraint):</div>
+      <div class="preset-btns" style="margin-bottom:6px;">
+        <button class="featured" onclick="loadPreset('mazeA')">Maze A (10&times;10): Central block</button>
+        <button class="featured" onclick="loadPreset('mazeB')">Maze B (15&times;15): Split + pillars</button>
+        <button class="featured" onclick="loadPreset('mazeC')">Maze C (20&times;20): Zigzag walls</button>
+      </div>
+      <div style="margin-bottom:6px; font-size:12px; font-weight:600;">Other:</div>
+      <div class="preset-btns">
+        <button onclick="clearAll()">Clear</button>
+        <button onclick="loadPreset('larsSketch')">Lars's original sketch</button>
+      </div>
+      <div id="mapInfo" class="map-info" style="margin-top:8px; display:none;"></div>
+      <details>
+        <summary>Import / Export layout (JSON)</summary>
+        <textarea id="json"></textarea>
+        <div style="margin-top:4px;">
+          <button onclick="exportJSON()">Export current</button>
+          <button onclick="importJSON()">Import from textarea</button>
+          <button onclick="downloadJSON()">Download .json</button>
+        </div>
+      </details>
+      <details open>
+        <summary><b>Export as rollout scenario</b> (for <code>robot/scripts/rollout/rollout.py</code>)</summary>
+        <div class="small" style="margin:4px 0;">Builds a JSON bundle matching <code>SCENARIO_FORMAT.md</code>: <code>obstacle_map</code> (0/1), <code>energy_map</code> (current EH field, normalized [0,1]), <code>robot</code> &amp; <code>goal</code> as <code>[x, y]</code>, <code>max_steps</code>. Exported in the repo <code>[x][y]</code> frame (x=East, y=North, origin bottom-left) so rollout renders the map the same way you drew it here.</div>
+        <div class="small" id="ppoNotes" style="margin-bottom:4px; color:#666;"></div>
+        <div>
+          <button onclick="exportPPOScenario()">Preview in textarea</button>
+          <button onclick="downloadPPOScenario()">Download scenario .json</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <div class="stats" id="stats"></div>
+</div>
+
+<script>
+// =====================================================================
+//  State
+// =====================================================================
+let N = 10;
+let cellPx = 52;
+let tool = 'obstacle';
+let cells = [];
+let lights = [];
+let alpha = 0.5;
+let sigma = 1.5;
+let cornerSqueeze = true;
+let show = { step: true, euc: true, eh: true };
+let currentMapName = null;
+
+function emptyCells() {
+  return Array.from({length: N}, () => Array.from({length: N}, () => 'empty'));
+}
+function computeCellPx() {
+  return Math.floor(520 / N);
+}
+function resizeGrid(newN, keepCells=false) {
+  const oldCells = cells, oldLights = lights;
+  N = newN;
+  cellPx = computeCellPx();
+  if (keepCells && oldCells.length > 0) {
+    cells = emptyCells();
+    for (let r = 0; r < Math.min(N, oldCells.length); r++)
+      for (let c = 0; c < Math.min(N, oldCells[0].length); c++)
+        cells[r][c] = oldCells[r][c];
+    lights = oldLights.filter(s => s.r < N && s.c < N);
+  } else {
+    cells = emptyCells();
+    lights = [];
+  }
+  document.getElementById('gridSize').value = N;
+  const total = N * cellPx;
+  const gw = document.getElementById('gridWrap');
+  gw.style.width = (total + 2) + 'px';
+  gw.style.height = (total + 2) + 'px';
+  const grid = document.getElementById('grid');
+  grid.style.gridTemplateColumns = `repeat(${N}, ${cellPx}px)`;
+  grid.style.gridTemplateRows = `repeat(${N}, ${cellPx}px)`;
+  const svg = document.getElementById('overlay');
+  svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+}
+
+// =====================================================================
+//  Energy field
+// =====================================================================
+function computeEH() {
+  const eh = Array.from({length: N}, () => Array(N).fill(0));
+  if (lights.length === 0) return eh;
+  let maxVal = 0;
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      let v = 0;
+      for (const s of lights) {
+        const dr = r - s.r, dc = c - s.c;
+        v += Math.exp(-(dr*dr + dc*dc) / (2*sigma*sigma));
+      }
+      eh[r][c] = v;
+      if (v > maxVal) maxVal = v;
+    }
+  }
+  if (maxVal > 0) {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) eh[r][c] /= maxVal;
+  }
+  return eh;
+}
+
+// =====================================================================
+//  Light placement validation (max 3, on edge or obstacle-adjacent)
+// =====================================================================
+function isOnEdge(r, c) { return r === 0 || r === N-1 || c === 0 || c === N-1; }
+function isObstacleAdjacent(r, c) {
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    const nr = r+dr, nc = c+dc;
+    if (nr<0||nr>=N||nc<0||nc>=N) continue;
+    if (cells[nr][nc] === 'obstacle') return true;
+  }
+  return false;
+}
+function invalidLights() {
+  return lights.map(s => {
+    if (cells[s.r][s.c] === 'obstacle') return { ...s, why: 'on obstacle' };
+    if (!isOnEdge(s.r, s.c) && !isObstacleAdjacent(s.r, s.c)) {
+      return { ...s, why: 'not on edge and not adjacent to an obstacle' };
+    }
+    return null;
+  }).filter(Boolean);
+}
+function isLightInvalid(s) {
+  return invalidLights().some(b => b.r === s.r && b.c === s.c);
+}
+
+// =====================================================================
+//  Pathfinding
+// =====================================================================
+const DIRS = [
+  [-1,-1],[-1,0],[-1,1],
+  [ 0,-1],       [ 0,1],
+  [ 1,-1],[ 1,0],[ 1,1],
+];
+
+function findCellOfType(type) {
+  for (let r = 0; r < N; r++)
+    for (let c = 0; c < N; c++)
+      if (cells[r][c] === type) return [r,c];
+  return null;
+}
+function hStep(r,c,gr,gc) { return Math.max(Math.abs(r-gr), Math.abs(c-gc)); }
+function hEuc(r,c,gr,gc) {
+  const dx = Math.abs(c-gc), dy = Math.abs(r-gr);
+  return Math.max(dx,dy) + (Math.SQRT2 - 1) * Math.min(dx,dy);
+}
+function hEH(r,c,gr,gc) {
+  const dx = Math.abs(c-gc), dy = Math.abs(r-gr);
+  const oct = Math.max(dx,dy) + (Math.SQRT2 - 1) * Math.min(dx,dy);
+  return (1 - alpha) * oct;
+}
+function neighbors(r,c) {
+  const out = [];
+  for (const [dr,dc] of DIRS) {
+    const nr = r+dr, nc = c+dc;
+    if (nr<0||nr>=N||nc<0||nc>=N) continue;
+    if (cells[nr][nc] === 'obstacle') continue;
+    if (cornerSqueeze && dr !== 0 && dc !== 0) {
+      if (cells[r+dr][c] === 'obstacle' && cells[r][c+dc] === 'obstacle') continue;
+    }
+    out.push([nr,nc,dr,dc]);
+  }
+  return out;
+}
+
+class PQ {
+  constructor() { this.a = []; }
+  push(item, p) {
+    this.a.push({item, p});
+    let i = this.a.length - 1;
+    while (i > 0) {
+      const parent = (i-1) >> 1;
+      if (this.a[parent].p <= this.a[i].p) break;
+      [this.a[parent], this.a[i]] = [this.a[i], this.a[parent]];
+      i = parent;
+    }
+  }
+  pop() {
+    if (this.a.length === 0) return null;
+    const top = this.a[0];
+    const last = this.a.pop();
+    if (this.a.length > 0) {
+      this.a[0] = last;
+      let i = 0, n = this.a.length;
+      while (true) {
+        const l = 2*i+1, r = 2*i+2;
+        let m = i;
+        if (l < n && this.a[l].p < this.a[m].p) m = l;
+        if (r < n && this.a[r].p < this.a[m].p) m = r;
+        if (m === i) break;
+        [this.a[m], this.a[i]] = [this.a[i], this.a[m]];
+        i = m;
+      }
+    }
+    return top;
+  }
+  get size() { return this.a.length; }
+}
+
+function aStar(start, goal, costFn, hFn) {
+  // Returns { path, expanded }. expanded = nodes closed = compute-cost proxy.
+  const [sr, sc] = start, [gr, gc] = goal;
+  const key = (r,c) => r*N+c;
+  const g = new Map();
+  const came = new Map();
+  const closed = new Set();
+  g.set(key(sr,sc), 0);
+  const open = new PQ();
+  open.push([sr,sc], hFn(sr,sc,gr,gc));
+  let expanded = 0;
+  while (open.size) {
+    const {item: [r,c]} = open.pop();
+    const k = key(r,c);
+    if (closed.has(k)) continue;
+    closed.add(k);
+    expanded++;
+    if (r === gr && c === gc) {
+      const path = [[r,c]];
+      let kk = key(r,c);
+      while (came.has(kk)) {
+        const [pr,pc] = came.get(kk);
+        path.push([pr,pc]);
+        kk = key(pr,pc);
+      }
+      path.reverse();
+      return { path, expanded };
+    }
+    const gCur = g.get(k);
+    for (const [nr,nc,dr,dc] of neighbors(r,c)) {
+      const stepCost = costFn(r,c,nr,nc,dr,dc);
+      const tentG = gCur + stepCost;
+      const nk = key(nr,nc);
+      if (!g.has(nk) || tentG < g.get(nk)) {
+        g.set(nk, tentG);
+        came.set(nk, [r,c]);
+        open.push([nr,nc], tentG + hFn(nr,nc,gr,gc));
+      }
+    }
+  }
+  return { path: null, expanded };
+}
+
+function pathPhysicalLength(p) {
+  if (!p || p.length < 2) return 0;
+  let L = 0;
+  for (let i = 1; i < p.length; i++) {
+    const dr = p[i][0]-p[i-1][0], dc = p[i][1]-p[i-1][1];
+    L += Math.hypot(dr, dc);
+  }
+  return L;
+}
+function pathEnergyHarvested(p, eh) {
+  if (!p) return 0;
+  return p.reduce((a,[r,c])=>a+eh[r][c], 0);
+}
+function pathDiagonalCount(p) {
+  if (!p) return 0;
+  let n = 0;
+  for (let i = 1; i < p.length; i++) {
+    const dr = p[i][0]-p[i-1][0], dc = p[i][1]-p[i-1][1];
+    if (dr !== 0 && dc !== 0) n++;
+  }
+  return n;
+}
+
+// =====================================================================
+//  Rendering
+// =====================================================================
+function render() {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  const eh = computeEH();
+  const showLabels = N <= 15;
+  const badSet = new Set(invalidLights().map(s => s.r*N+s.c));
+
+  for (let r = 0; r < N; r++) {
+    for (let c = 0; c < N; c++) {
+      const el = document.createElement('div');
+      el.className = 'cell ' + (cells[r][c] === 'empty' ? '' : cells[r][c]);
+      if (cells[r][c] === 'empty' && eh[r][c] > 0.02) {
+        const a = Math.min(0.85, eh[r][c]);
+        el.style.background = `rgba(255, 212, 0, ${a})`;
+      }
+      if (showLabels) {
+        const lbl = document.createElement('span');
+        lbl.className = 'lbl';
+        lbl.textContent = `${r},${c}`;
+        el.appendChild(lbl);
+      }
+      if (lights.some(s => s.r === r && s.c === c)) {
+        const dot = document.createElement('div');
+        dot.className = 'src-dot' + (badSet.has(r*N+c) ? ' invalid' : '');
+        el.appendChild(dot);
+      }
+      el.addEventListener('click', () => handleClick(r,c));
+      grid.appendChild(el);
+    }
+  }
+
+  const start = findCellOfType('start');
+  const goal = findCellOfType('goal');
+  const results = { step: null, euc: null, eh: null };
+  const paths = { step: null, euc: null, eh: null };
+  if (start && goal) {
+    results.step = aStar(start, goal, () => 1, hStep);
+    results.euc  = aStar(start, goal,
+      (r,c,nr,nc,dr,dc) => (dr === 0 || dc === 0) ? 1 : Math.SQRT2,
+      hEuc);
+    results.eh   = aStar(start, goal,
+      (r,c,nr,nc,dr,dc) => {
+        const step = (dr === 0 || dc === 0) ? 1 : Math.SQRT2;
+        return step - alpha * eh[nr][nc];
+      },
+      hEH);
+    paths.step = results.step.path;
+    paths.euc  = results.euc.path;
+    paths.eh   = results.eh.path;
+  }
+  drawPaths(paths);
+  renderStats(paths, results, eh, start, goal);
+  if (typeof updatePPONotes === 'function') updatePPONotes();
+}
+
+function drawPaths(paths) {
+  const svg = document.getElementById('overlay');
+  svg.innerHTML = '';
+  function pt(r,c) { return { x: c*cellPx + cellPx/2, y: r*cellPx + cellPx/2 }; }
+  const off = Math.max(3, Math.min(6, cellPx/10));
+  const offsets = { step: -off, euc: 0, eh: off };
+  const colors  = { step: 'var(--path-step)', euc: 'var(--path-euc)', eh: 'var(--path-eh)' };
+  for (const key of ['step','euc','eh']) {
+    if (!show[key]) continue;
+    const p = paths[key];
+    if (!p) continue;
+    let d = '';
+    for (let i = 0; i < p.length; i++) {
+      const {x,y} = pt(p[i][0], p[i][1]);
+      d += (i === 0 ? 'M' : 'L') + (x + offsets[key]) + ',' + (y + offsets[key]) + ' ';
+    }
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', colors[key]);
+    path.setAttribute('stroke-width', Math.max(2, cellPx/18));
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('opacity', '0.85');
+    svg.appendChild(path);
+  }
+}
+
+function renderStats(paths, results, eh, start, goal) {
+  const el = document.getElementById('stats');
+  const badLights = invalidLights();
+  let lightWarn = '';
+  if (lights.length > 3) {
+    lightWarn += `<div class="warn"><b>⚠️ ${lights.length} lights placed</b> &mdash; physical constraint is max 3 lamps.</div>`;
+  }
+  if (badLights.length > 0) {
+    lightWarn += `<div class="warn"><b>⚠️ ${badLights.length} light placement(s) violate the physical constraint:</b><br>` +
+      badLights.map(b => `&nbsp;&nbsp;(${b.r},${b.c}): ${b.why}`).join('<br>') +
+      `<br>Lamps must be on the grid edge or adjacent (8-conn) to an obstacle.</div>`;
+  }
+
+  if (!start || !goal) {
+    el.innerHTML = lightWarn + '<h2>Stats</h2><p>Place a start and a goal cell to see paths.</p>';
+    return;
+  }
+  function row(name, p, res, color) {
+    if (!p) return `<tr><td style="color:${color}">${name}</td><td colspan="5">no path</td></tr>`;
+    const steps = p.length - 1;
+    const physL = pathPhysicalLength(p);
+    const diag = pathDiagonalCount(p);
+    const energy = pathEnergyHarvested(p, eh);
+    const exp = res ? res.expanded : '-';
+    return `<tr>
+      <td style="color:${color}"><span class="legend-swatch" style="background:${color}"></span>${name}</td>
+      <td>${steps}</td>
+      <td>${physL.toFixed(3)}</td>
+      <td>${diag}</td>
+      <td>${energy.toFixed(2)}</td>
+      <td>${exp}</td>
+    </tr>`;
+  }
+  const totalLitCells = eh.flat().filter(v => v > 0.05).length;
+  const totalEHinField = eh.flat().reduce((a,b)=>a+b,0);
+
+  let html = lightWarn;
+  html += '<h2>Path comparison</h2>';
+  html += '<table><tr><th>Path</th><th>Steps</th><th>Phys. length</th><th>Diag.</th><th>EH harvested</th><th>Cells exp.</th></tr>';
+  html += row('Step-count optimal', paths.step, results.step, '#ff8c00');
+  html += row('Euclidean optimal',  paths.euc,  results.euc,  '#0078d4');
+  html += row('EH-aware (&alpha;='+alpha.toFixed(2)+')', paths.eh, results.eh, '#1ea93f');
+  html += '</table>';
+  html += `<div class="small" style="margin-top:4px;">Cells expanded = nodes A* closed during search. Per-step replan cost on the robot scales roughly linearly with this (plus heap overhead).</div>`;
+
+  html += '<h2 style="margin-top:12px;">Design quality signals</h2>';
+  const eucP = paths.euc, ehP = paths.eh, stepP = paths.step;
+  if (eucP && ehP) {
+    const eucLen = pathPhysicalLength(eucP);
+    const ehLen = pathPhysicalLength(ehP);
+    const eucE = pathEnergyHarvested(eucP, eh);
+    const ehE = pathEnergyHarvested(ehP, eh);
+    const detour = eucLen > 0 ? ((ehLen / eucLen - 1) * 100) : 0;
+    const gain = eucE > 0 ? ((ehE / eucE - 1) * 100) : (ehE > 0 ? Infinity : 0);
+    const expansionRatio = (results.eh && results.euc && results.euc.expanded > 0)
+      ? (results.eh.expanded / results.euc.expanded) : 1;
+    html += `<div class="small">
+      EH-aware path is <b>${detour.toFixed(1)}%</b> longer physically and harvests <b>${isFinite(gain) ? gain.toFixed(0)+'%' : '∞'}</b> more energy.
+      EH-aware A* expands <b>${expansionRatio.toFixed(2)}&times;</b> as many cells as Euclidean A*.
+      ${detour < 0.5 && Math.abs(gain) < 1 ? '<br><b>⚠️</b> EH-aware and Euclidean paths are essentially identical &mdash; lights aren\'t exerting any pull. Try stronger lights, bigger &sigma;, or higher &alpha;.' : ''}
+    </div>`;
+  }
+  if (stepP && eucP) {
+    const stepDiag = pathDiagonalCount(stepP);
+    const eucDiag = pathDiagonalCount(eucP);
+    const stepPhys = pathPhysicalLength(stepP);
+    const eucPhys = pathPhysicalLength(eucP);
+    if (stepPhys > eucPhys + 0.001) {
+      html += `<div class="small" style="margin-top:6px; padding:6px; background:#fff4e0; border-left:3px solid #ff8c00;">
+        <b>Diagonal-bias check:</b> step-count optimal has ${stepDiag} diagonals, phys length ${stepPhys.toFixed(3)};
+        Euclidean optimal has ${eucDiag} diagonals, length ${eucPhys.toFixed(3)}.
+        A trained RL policy (step-count penalty, not distance) could legitimately pick the orange path
+        but it is <b>${(stepPhys - eucPhys).toFixed(3)}</b> units physically longer.
+      </div>`;
+    } else {
+      html += `<div class="small" style="margin-top:6px;">No diagonal-bias gap on this map (step and Euclidean optima same physical length).</div>`;
+    }
+  }
+
+  html += `<div class="small" style="margin-top:10px; color:#555;">
+    Grid: ${N}&times;${N} &nbsp;&middot;&nbsp;
+    Lit cells (EH&gt;0.05): ${totalLitCells} &nbsp;&middot;&nbsp;
+    Total field energy: ${totalEHinField.toFixed(1)} &nbsp;&middot;&nbsp;
+    Light sources: ${lights.length} ${lights.length>3?'(over limit)':''}
+  </div>`;
+  el.innerHTML = html;
+}
+
+// =====================================================================
+//  Interaction
+// =====================================================================
+function handleClick(r, c) {
+  if (tool === 'obstacle') {
+    if (cells[r][c] === 'start' || cells[r][c] === 'goal') return;
+    cells[r][c] = 'obstacle';
+  } else if (tool === 'erase') {
+    cells[r][c] = 'empty';
+    lights = lights.filter(s => !(s.r === r && s.c === c));
+  } else if (tool === 'start') {
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++)
+      if (cells[i][j] === 'start') cells[i][j] = 'empty';
+    cells[r][c] = 'start';
+  } else if (tool === 'goal') {
+    for (let i = 0; i < N; i++) for (let j = 0; j < N; j++)
+      if (cells[i][j] === 'goal') cells[i][j] = 'empty';
+    cells[r][c] = 'goal';
+  } else if (tool === 'light') {
+    if (!lights.some(s => s.r === r && s.c === c)) lights.push({r, c});
+  } else if (tool === 'removeLight') {
+    lights = lights.filter(s => !(s.r === r && s.c === c));
+  }
+  saveLocal();
+  render();
+}
+
+document.querySelectorAll('#toolbar button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#toolbar button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    tool = btn.dataset.tool;
+  });
+});
+document.getElementById('gridSize').addEventListener('change', e => {
+  const newN = parseInt(e.target.value, 10);
+  const hasContent = cells.some(row => row.some(v => v !== 'empty')) || lights.length > 0;
+  if (hasContent && !confirm('Switching grid size will clear the current map. Continue?')) {
+    e.target.value = N;
+    return;
+  }
+  resizeGrid(newN, false);
+  saveLocal();
+  render();
+});
+document.getElementById('alpha').addEventListener('input', e => {
+  alpha = parseFloat(e.target.value);
+  document.getElementById('alphaVal').textContent = alpha.toFixed(2);
+  render();
+});
+document.getElementById('sigma').addEventListener('input', e => {
+  sigma = parseFloat(e.target.value);
+  document.getElementById('sigmaVal').textContent = sigma.toFixed(1);
+  render();
+});
+document.getElementById('cornerSqueeze').addEventListener('change', e => {
+  cornerSqueeze = e.target.checked;
+  render();
+});
+document.getElementById('showStep').addEventListener('change', e => { show.step = e.target.checked; render(); });
+document.getElementById('showEuc').addEventListener('change',  e => { show.euc  = e.target.checked; render(); });
+document.getElementById('showEh').addEventListener('change',   e => { show.eh   = e.target.checked; render(); });
+
+// =====================================================================
+//  Persistence / presets
+// =====================================================================
+function snapshot() { return { N, cells, lights, alpha, sigma, cornerSqueeze }; }
+function restore(s) {
+  if (typeof s.N === 'number' && s.N !== N) resizeGrid(s.N, false);
+  cells = s.cells || emptyCells();
+  lights = s.lights || [];
+  if (typeof s.alpha === 'number') {
+    alpha = s.alpha;
+    document.getElementById('alpha').value = alpha;
+    document.getElementById('alphaVal').textContent = alpha.toFixed(2);
+  }
+  if (typeof s.sigma === 'number') {
+    sigma = s.sigma;
+    document.getElementById('sigma').value = sigma;
+    document.getElementById('sigmaVal').textContent = sigma.toFixed(1);
+  }
+  if (typeof s.cornerSqueeze === 'boolean') {
+    cornerSqueeze = s.cornerSqueeze;
+    document.getElementById('cornerSqueeze').checked = cornerSqueeze;
+  }
+  render();
+}
+function saveLocal() {
+  try { localStorage.setItem('mapDesigner', JSON.stringify(snapshot())); } catch (e) {}
+}
+function clearAll() {
+  cells = emptyCells();
+  lights = [];
+  currentMapName = null;
+  document.getElementById('mapInfo').style.display = 'none';
+  saveLocal();
+  render();
+}
+function exportJSON() {
+  document.getElementById('json').value = JSON.stringify(snapshot(), null, 2);
+}
+function importJSON() {
+  try {
+    const s = JSON.parse(document.getElementById('json').value);
+    restore(s);
+    saveLocal();
+  } catch (e) { alert('Invalid JSON: ' + e.message); }
+}
+function downloadJSON() {
+  const name = currentMapName || `map_${N}x${N}`;
+  const blob = new Blob([JSON.stringify(snapshot(), null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name + '.json';
+  a.click();
+}
+
+// =====================================================================
+//  Rollout scenario export (matches SCENARIO_FORMAT.md)
+// =====================================================================
+// rollout.py consumes the repo [x][y] frame: FIRST index = x (East), SECOND
+// index = y (North), origin bottom-left. This tool draws internally in image
+// frame (cells[row][col], row top->bottom), so the export CONVERTS:
+//     x = col,  y = (N-1) - row     ->   obstacle_map[x][y] = cells[N-1-y][x]
+// which keeps the map rollout renders (x right, y up) identical to what you
+// drew here. Field mapping:
+//   - cells[r][c] === 'obstacle'      -> obstacle_map[x][y] = 1, else 0.
+//   - computeEH() (normalized [0,1])  -> energy_map[x][y]  (spec field name).
+//   - findCellOfType('start') -> robot [x, y].
+//   - findCellOfType('goal')  -> goal  [x, y].
+//   - max_steps defaults to N*N + 10.
+//
+// Note: the PPO model only sees a 10x10 window centered on the robot. On 15x15
+// and 20x20 maps the policy reacts to goal direction, not true distance.
+
+function buildPPOScenario(overrides) {
+  const start = findCellOfType('start');
+  const goal  = findCellOfType('goal');
+  if (!start || !goal) {
+    alert('Place both a start cell and a goal cell before exporting a PPO scenario.');
+    return null;
+  }
+  // Convert image-frame cells[row][col] -> repo [x][y]: x = col, y = (N-1) - row.
+  const toRC = (x, y) => ({ r: N - 1 - y, c: x });
+  const obstacle_map = Array.from({length: N}, (_, x) =>
+    Array.from({length: N}, (_, y) => {
+      const { r, c } = toRC(x, y);
+      return cells[r][c] === 'obstacle' ? 1 : 0;
+    }));
+
+  // Build the energy map and explicitly re-normalize to strict [0, 1]:
+  //   1. Take the EH field from computeEH() (already normalized, but recompute max as safety).
+  //   2. Zero out cells that are obstacles (robot never visits them; cleaner map).
+  //   3. Divide by the actual max so the brightest free cell is exactly 1.0.
+  //   4. Clamp final values and round to 6 decimal places for compact JSON output.
+  const ehField = computeEH();
+  let actualMax = 0;
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+    if (cells[r][c] === 'obstacle') continue; // ignore obstacle cells when finding max
+    const v = ehField[r][c];
+    if (isFinite(v) && v > actualMax) actualMax = v;
+  }
+  const scale = actualMax > 0 ? (1 / actualMax) : 0;
+  const energy_map = Array.from({length: N}, (_, x) =>
+    Array.from({length: N}, (_, y) => {
+      const { r, c } = toRC(x, y);
+      if (cells[r][c] === 'obstacle') return 0;
+      const v = ehField[r][c];
+      if (!isFinite(v) || v <= 0) return 0;
+      let norm = v * scale;
+      if (norm > 1) norm = 1;
+      if (norm < 0) norm = 0;
+      // Round to 6 decimal places to avoid noisy long fractions in JSON.
+      return Math.round(norm * 1e6) / 1e6;
+    }));
+
+  const name = (overrides && overrides.name) || currentMapName || `map_${N}x${N}`;
+  return {
+    name,
+    obstacle_map,
+    energy_map,
+    robot: [start[1], N - 1 - start[0]],
+    goal:  [goal[1],  N - 1 - goal[0]],
+    max_steps: N * N + 10
+  };
+}
+
+function exportPPOScenario() {
+  const s = buildPPOScenario();
+  if (!s) return;
+  document.getElementById('json').value = JSON.stringify(s, null, 2);
+}
+
+function downloadPPOScenario() {
+  const s = buildPPOScenario();
+  if (!s) return;
+  const blob = new Blob([JSON.stringify(s, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = s.name + '_scenario.json';
+  a.click();
+}
+
+function updatePPONotes() {
+  const el = document.getElementById('ppoNotes');
+  if (!el) return;
+  const start = findCellOfType('start');
+  const goal  = findCellOfType('goal');
+  const lit = computeEH().flat().filter(v => v > 0.05).length;
+  const obs = cells.flat().filter(v => v === 'obstacle').length;
+  let warn = '';
+  if (!start || !goal) warn += '<span style="color:#b00;"><b>Missing start or goal.</b></span> ';
+  if (N > 10) warn += '<b>Note:</b> PPO sees only a 10&times;10 window around the robot; on a ' + N + '&times;' + N + ' map it reacts to goal direction rather than true distance.';
+  el.innerHTML = 'Grid ' + N + '&times;' + N + ' &middot; ' + obs + ' obstacles &middot; ' + lit + ' lit cells &middot; start ' + (start?'['+start[0]+','+start[1]+']':'—') + ' &middot; goal ' + (goal?'['+goal[0]+','+goal[1]+']':'—') + ' &middot; max_steps ' + (N*N+10) + '<br>' + warn;
+}
+
+function setObstacles(list) { list.forEach(function(p){ var r=p[0], c=p[1]; if (r>=0&&r<N&&c>=0&&c<N) cells[r][c] = 'obstacle'; }); }
+function setLights(list)    { list.forEach(function(p){ var r=p[0], c=p[1]; if (r>=0&&r<N&&c>=0&&c<N) lights.push({r:r,c:c}); }); }
+function setStart(r,c)      { if (r>=0&&r<N&&c>=0&&c<N) cells[r][c] = 'start'; }
+function setGoal(r,c)       { if (r>=0&&r<N&&c>=0&&c<N) cells[r][c] = 'goal'; }
+function setAlphaSigma(a, s) {
+  alpha = a; sigma = s;
+  document.getElementById('alpha').value = a;
+  document.getElementById('alphaVal').textContent = a.toFixed(2);
+  document.getElementById('sigma').value = s;
+  document.getElementById('sigmaVal').textContent = s.toFixed(1);
+}
+function showInfo(name, html) {
+  currentMapName = name;
+  var el = document.getElementById('mapInfo');
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function loadPreset(name) {
+  if (name === 'mazeA')        loadMazeA();
+  else if (name === 'mazeB')   loadMazeB();
+  else if (name === 'mazeC')   loadMazeC();
+  else if (name === 'larsSketch') loadLarsSketch();
+  saveLocal();
+  render();
+}
+
+function loadMazeA() {
+  resizeGrid(10, false);
+  setAlphaSigma(0.5, 2.0);
+  setStart(0, 0);
+  setGoal(9, 9);
+  var obs = [];
+  for (var r = 2; r <= 7; r++)
+    for (var c = 3; c <= 6; c++)
+      obs.push([r, c]);
+  obs.push([1,2],[8,2],[1,7],[8,7]);
+  setObstacles(obs);
+  setLights([[1,0],[1,9],[8,9]]);
+  showInfo('mazeA',
+    '<b>Maze A &mdash; "Central block" (10&times;10)</b><br>' +
+    'A 6&times;4 obstacle block + 4 squeeze pillars forces routing around the perimeter. Two route choices (top-right or bottom-right). 3 lights on edges pull EH-aware to one route.<br>' +
+    '<b>At &alpha;=0.5:</b> identical physical length (16.79), EH-aware harvests <b>+68% energy</b> (10.40 vs 6.18). Same trip time, more solar gain.<br>' +
+    '<b>Cells expanded:</b> 54 (Euclidean) vs 57 (EH-aware) &mdash; modest replan overhead.'
+  );
+}
+
+function loadMazeB() {
+  resizeGrid(15, false);
+  setAlphaSigma(0.5, 2.0);
+  setStart(0, 0);
+  setGoal(14, 14);
+  var obs = [];
+  for (var r = 2; r <= 12; r++) obs.push([r, 7]);
+  obs.push([4,3],[5,3],[9,3],[10,3]);
+  obs.push([4,11],[5,11],[9,11],[10,11]);
+  obs.push([7,1],[7,2],[7,12],[7,13]);
+  setObstacles(obs);
+  setLights([[0,14],[7,14],[14,14]]);
+  showInfo('mazeB',
+    '<b>Maze B &mdash; "Split with pillars" (15&times;15)</b><br>' +
+    'Central vertical wall with top/bottom gaps. Pillars create narrower corridors. All 3 lights on the right edge force a real route commitment.<br>' +
+    '<b>At &alpha;=0.5:</b> EH-aware path is <b>5% longer</b> (24.49 vs 23.31) but harvests <b>+167% energy</b> (8.02 vs 3.00).<br>' +
+    '<b>Cells expanded:</b> 114 (Euclidean) vs 175 (EH-aware) &mdash; 53% more replan work per step.'
+  );
+}
+
+function loadMazeC() {
+  resizeGrid(20, false);
+  setAlphaSigma(0.5, 2.5);
+  setStart(0, 0);
+  setGoal(19, 19);
+  var obs = [];
+  for (var c = 0; c < 14; c++) obs.push([4, c]);
+  for (var c = 6; c < 20; c++) obs.push([8, c]);
+  for (var c = 0; c < 14; c++) obs.push([12, c]);
+  for (var c = 6; c < 20; c++) obs.push([16, c]);
+  obs.push([2,16],[3,16],[6,3],[7,3],[10,16],[11,16],[14,3],[15,3],[18,16],[19,16]);
+  setObstacles(obs);
+  setLights([[6,19],[10,0],[14,19]]);
+  showInfo('mazeC',
+    '<b>Maze C &mdash; "Zigzag walls" (20&times;20)</b><br>' +
+    'Four horizontal walls with alternating gaps force a zigzag route. 66 obstacles total. 3 lights on edges align with each wall-gap area.<br>' +
+    '<b>At &alpha;=0.5:</b> identical physical length (62.86), EH-aware harvests <b>+10% energy</b>.<br>' +
+    '<b>Cells expanded:</b> 287 (Euclidean) vs 330 (EH-aware) &mdash; on hardware this maps to per-step latency in the hundreds of ms. Best map for stressing the replan-cost story.'
+  );
+}
+
+function loadLarsSketch() {
+  resizeGrid(10, false);
+  setAlphaSigma(0.5, 1.5);
+  setStart(1, 0);
+  setGoal(9, 8);
+  var obs = [];
+  for (var c = 0; c < 10; c++) obs.push([0,c]);
+  for (var r = 1; r <= 9; r++) obs.push([r,9]);
+  for (var c = 3; c <= 8; c++) obs.push([1,c]);
+  for (var c = 6; c <= 8; c++) obs.push([2,c]);
+  for (var c = 7; c <= 8; c++) obs.push([3,c]);
+  obs.push([4,8]);
+  obs.push([4,3]); obs.push([4,4]);
+  obs.push([5,3]); obs.push([5,4]);
+  obs.push([6,3]); obs.push([6,4]);
+  for (var c = 0; c < 4; c++) obs.push([9,c]);
+  setObstacles(obs);
+  setLights([[7,1],[8,2],[8,6],[9,5]]);
+  showInfo('larsSketch',
+    '<b>Lars\'s original sketch</b> &mdash; approximate reconstruction. Note: 4 lights here exceeds the 3-lamp physical constraint &mdash; the panel will flag it.'
+  );
+}
+
+// =====================================================================
+//  Boot
+// =====================================================================
+resizeGrid(10, false);
+try {
+  var saved = localStorage.getItem('mapDesigner');
+  if (saved) restore(JSON.parse(saved));
+  else loadPreset('mazeA');
+} catch (e) {
+  loadPreset('mazeA');
+}
+render();
+</script>
+</body>
+</html>

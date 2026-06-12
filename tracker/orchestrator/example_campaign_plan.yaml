@@ -1,0 +1,70 @@
+# Example campaign plan.
+#
+# Plain YAML, consumed by orchestrator.campaign.CampaignPlan.load(). Copy this
+# to wherever you want and launch with `python main.py --campaign <path>`.
+#
+# Hierarchy:
+#   campaign  ->  sessions  ->  trials
+#     - 1 campaign  = this file.
+#     - 1 session   = one (cell, map) pair + `runs_per_session` identical trials
+#                     back-to-back. The map's physical layout is fixed for the
+#                     whole session — only the robot moves between trials.
+#     - 1 trial     = one run = one MoveToGrid attempt (= one runs/<run_id>/ folder).
+#
+# Scheduling is MAP-MAJOR: the orchestrator finishes every cell on map 1
+# before touching map 2, and never revisits a map. With the values below:
+#   3 maps x 4 cells x 10 trials = 120 runs total.
+# Map order is preserved as-written; cell order within each map block is
+# shuffled when session_order: randomized.
+#
+# Operator workflow with this plan:
+#   1. Set up obstacles to match scenes/map1.json
+#   2. python main.py --campaign <this file>   (do NOT use --auto-advance —
+#      you'll be repositioning the robot manually between trials)
+#   3. Press N to start a trial. When it ends, walk over, return the robot to
+#      start_cell, press N for the next trial. After 10 trials of (cell, map1)
+#      the orchestrator advances to the next session, same map1 layout, a
+#      different cell. Press B for a baseline, X to cancel, Q for status.
+#   4. After all 4 cells x 10 trials = 40 runs on map 1, rearrange to map2.
+#   5. Repeat for map 2 and map 3.
+
+schema_version: 1
+
+# Seeds the within-map cell shuffle. Same seed -> same cell order on reload,
+# so a crashed campaign can be resumed by replaying from this file.
+random_seed: 42
+
+# How many identical trials per (cell, map) session. Each trial reuses the
+# same scene file, the same goal_cell, and the same start_cell — only the
+# random seed of the planner and the live energy map differ.
+runs_per_session: 10
+
+# "randomized" shuffles cells within each map block; "as_written" keeps the
+# order of `cells` below for every map block.
+session_order: randomized
+
+# Cells to compare — (mode, planner) combinations. Mode in {decentralized,
+# centralized}; planner in {ppo, astar_energy, astar_shortest}. Drop any
+# you don't want this campaign to cover.
+cells:
+  - {mode: decentralized, planner: ppo}
+  - {mode: decentralized, planner: astar_energy}
+  - {mode: centralized,   planner: ppo}
+  - {mode: centralized,   planner: astar_energy}
+
+# Maps walked in the order written here (outer loop). Every cell is run on
+# every map so the analysis pairs runs by (map_id, goal_cell) for the
+# Wilcoxon signed-rank test. DO NOT change the map list mid-campaign or
+# pairing keys diverge.
+#
+#   map_id     : your label; appears in run_id, session_id, metadata.yaml
+#   scene_name : tracker/scenes/<scene_name>.json — saved via the GUI 'k' key
+#   goal_cell  : [col, row] in TRACKER frame (row 0 = top). Overrides whatever
+#                goal is saved in the scene.
+#   start_cell : [col, row] in TRACKER frame — where you place the robot at
+#                the beginning of every trial. The orchestrator does NOT
+#                physically move the robot.
+maps:
+  - {map_id: map1, scene_name: map1, goal_cell: [8, 9], start_cell: [0, 0]}
+  - {map_id: map2, scene_name: map2, goal_cell: [9, 5], start_cell: [0, 0]}
+  - {map_id: map3, scene_name: map3, goal_cell: [9, 9], start_cell: [0, 0]}

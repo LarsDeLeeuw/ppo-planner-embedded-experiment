@@ -1,0 +1,10 @@
+# Standalone analysis pipeline for the energy-harvesting experiment.
+# This venv is independent of the tracker; no ROS2 install required.
+mcap>=1.1
+mcap-ros2-support>=0.5
+pandas>=2.0
+scipy>=1.11
+matplotlib>=3.7
+numpy>=1.24
+PyYAML>=6.0
+rosbags>=0.10          # only used by make_synthetic_run.py to fabricate test bags
